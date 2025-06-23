@@ -1,0 +1,39 @@
+
+import streamlit as st
+import requests
+import folium
+from streamlit_folium import st_folium
+
+st.set_page_config(layout="wide")
+
+st.title("🗺️ Zonas Peligrosas desde KoBoToolbox")
+st.markdown("Este visor carga en tiempo real los datos del formulario en KoBoToolbox de forma segura usando tu token de acceso.")
+
+# Datos del usuario
+token = "0774fbe5459f53c43df932e9cbbf4bc7933d09cb"
+asset_uid = "aqY6oRXU7iELs6bmj3VuwB"
+url = f"https://kc.kobotoolbox.org/api/v2/assets/{asset_uid}/data.geojson"
+
+# Petición segura
+headers = {"Authorization": f"Token {token}"}
+response = requests.get(url, headers=headers)
+
+if response.status_code != 200:
+    st.error("Error al conectar con KoBoToolbox. Revisa el token o el ID del formulario.")
+else:
+    geojson_data = response.json()
+
+    # Crear el mapa
+    m = folium.Map(location=[-2.2, -79.9], zoom_start=12, tiles="cartodbpositron")
+
+    folium.GeoJson(
+        geojson_data,
+        name="Zonas peligrosas",
+        tooltip=folium.GeoJsonTooltip(fields=["Zona_peligrosa___Nombre_de_la_zona", "Zona_peligrosa___Nivel_de_riesgo", "Zona_peligrosa___Observaciones"],
+                                       aliases=["Zona:", "Riesgo:", "Obs:"],
+                                       sticky=False)
+    ).add_to(m)
+
+    folium.LayerControl().add_to(m)
+
+    st_data = st_folium(m, width=1200, height=700)
