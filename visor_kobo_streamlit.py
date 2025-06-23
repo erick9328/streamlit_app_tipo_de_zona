@@ -11,7 +11,7 @@ st.markdown("Este visor carga en tiempo real los datos del formulario en KoBoToo
 
 # Token y Asset ID
 import os
-token = os.getenv("KOBO_TOKEN") or "0774fbe5459f53c43df932e9cbbf4bc7933d09cb"
+token = os.getenv("KOBO_TOKEN")
 asset_uid = "aqY6oRXU7iELs6bmj3VuwB"
 url = f"https://kc.kobotoolbox.org/api/v2/assets/{asset_uid}/data.geojson"
 
