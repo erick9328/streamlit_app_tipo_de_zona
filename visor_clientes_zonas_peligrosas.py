@@ -5,20 +5,17 @@ import requests
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from shapely.geometry import shape
+from shapely.geometry import shape, Point
 
 st.set_page_config(layout="wide")
-st.title("🛰️ Visor de Clientes en Zonas Peligrosas")
+st.title("🛰️ Visor de Clientes en Zonas Peligrosas con Recomendación")
 
-# 1. Cargar clientes desde archivo GeoJSON local
+# Cargar clientes desde archivo GeoJSON local
 clientes = gpd.read_file("clientes_fibra_guayaquil.geojson")
 
-# 2. Cargar zonas peligrosas desde la API de KoBoToolbox
-st.sidebar.header("🔐 API KoBo")
+# Formulario lateral
+st.sidebar.header("🔐 Conexión a KoBoToolbox")
 kobo_token = st.sidebar.text_input("Token de KoBo (privado)", type="password")
-kobo_url = "https://kf.kobotoolbox.org/api/v2/assets/"
-
-# ID del formulario que contiene los polígonos de zonas peligrosas
 form_id = st.sidebar.text_input("ID del formulario", value="aqY6oRXU7iELs6bmj3VuwB")
 
 @st.cache_data(ttl=60)
@@ -37,20 +34,47 @@ if kobo_token and form_id:
     zonas = get_geojson_from_kobo(kobo_token, form_id)
 
     if zonas is not None and not zonas.empty:
-        # 3. Cruce espacial: clientes que caen en zonas peligrosas
+        # Cruce espacial
         clientes["en_zona_peligrosa"] = clientes.geometry.apply(
             lambda punto: any(polygon.contains(punto) for polygon in zonas.geometry)
         )
 
-        # 4. Visualización
+        # Búsqueda por ID
+        st.sidebar.header("🔎 Búsqueda Manual")
+        cliente_id = st.sidebar.number_input("Buscar por ID de cliente", min_value=1, max_value=2000, step=1)
+        buscar_coords = st.sidebar.checkbox("Buscar por coordenadas")
+        lat_input = st.sidebar.text_input("Latitud")
+        lon_input = st.sidebar.text_input("Longitud")
+
+        punto_focal = None
+        mensaje = ""
+
+        if st.sidebar.button("Buscar"):
+            if buscar_coords and lat_input and lon_input:
+                try:
+                    lat = float(lat_input)
+                    lon = float(lon_input)
+                    punto_focal = Point(lon, lat)
+                    riesgo = any(polygon.contains(punto_focal) for polygon in zonas.geometry)
+                    mensaje = "🛑 Zona peligrosa - evitar visita" if riesgo else "✅ Seguro - se puede visitar"
+                except:
+                    mensaje = "⚠️ Coordenadas inválidas"
+            else:
+                cliente_row = clientes[clientes["id_cliente"] == cliente_id]
+                if not cliente_row.empty:
+                    punto_focal = cliente_row.geometry.values[0]
+                    riesgo = cliente_row["en_zona_peligrosa"].values[0]
+                    mensaje = "🛑 Zona peligrosa - evitar visita" if riesgo else "✅ Seguro - se puede visitar"
+                else:
+                    mensaje = "❌ Cliente no encontrado"
+
+        # Crear mapa
         m = folium.Map(location=[-2.2, -79.9], zoom_start=12)
         folium.TileLayer("CartoDB positron").add_to(m)
 
-        # Zonas peligrosas
         for _, zona in zonas.iterrows():
             folium.GeoJson(zona.geometry, tooltip=zona.get("grupo_zona/nombre_zona", "Zona")).add_to(m)
 
-        # Clientes
         for _, row in clientes.iterrows():
             color = "red" if row["en_zona_peligrosa"] else "green"
             folium.CircleMarker(
@@ -62,15 +86,22 @@ if kobo_token and form_id:
                 tooltip=row["nombre"]
             ).add_to(m)
 
+        if punto_focal:
+            folium.Marker(
+                location=[punto_focal.y, punto_focal.x],
+                icon=folium.Icon(color="blue", icon="info-sign"),
+                popup=mensaje
+            ).add_to(m)
+
         st.subheader("🗺️ Mapa Interactivo")
         st_folium(m, width=1000, height=600)
 
-        # 5. Mostrar sugerencias
+        if mensaje:
+            st.success(mensaje) if "✅" in mensaje else st.warning(mensaje)
+
         en_riesgo = clientes[clientes["en_zona_peligrosa"]]
         st.markdown(f"### ⚠️ Clientes en zona peligrosa: {len(en_riesgo)}")
-
-        if not en_riesgo.empty:
-            st.dataframe(en_riesgo[["id_cliente", "nombre", "lat", "lon"]])
+        st.dataframe(en_riesgo[["id_cliente", "nombre", "lat", "lon"]])
     else:
         st.warning("No se encontraron zonas peligrosas.")
 else:
