@@ -7,19 +7,15 @@ import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape, Point
 import os
+from io import BytesIO
 
 st.set_page_config(layout="wide")
 st.title("🛰️ Visor de Clientes en Zonas Peligrosas con Recomendación")
 
-# Cargar clientes desde archivo GeoJSON local
 clientes = gpd.read_file("clientes_fibra_guayaquil.geojson")
 
-# Token seguro desde secrets
 kobo_token = os.getenv("KOBO_TOKEN")
-
-# ID del formulario (puede seguir siendo editable si lo necesitas)
-st.sidebar.header("🧾 Configuración del Formulario")
-form_id = st.sidebar.text_input("ID del formulario KoBo", value="aqY6oRXU7iELs6bmj3VuwB")
+form_id = "aqY6oRXU7iELs6bmj3VuwB"  # ID fijo dentro del código
 
 @st.cache_data(ttl=60)
 def get_geojson_from_kobo(token, form_id):
@@ -27,13 +23,16 @@ def get_geojson_from_kobo(token, form_id):
     geojson_url = f"https://kf.kobotoolbox.org/api/v2/assets/{form_id}/data.geojson"
     response = requests.get(geojson_url, headers=headers)
     if response.status_code == 200:
-        gdf = gpd.read_file(response.text)
-        return gdf
+        try:
+            return gpd.read_file(BytesIO(response.content))
+        except Exception as e:
+            st.error(f"Error leyendo el GeoJSON: {e}")
+            return None
     else:
         st.error(f"Error al obtener GeoJSON: {response.status_code}")
         return None
 
-if kobo_token and form_id:
+if kobo_token:
     zonas = get_geojson_from_kobo(kobo_token, form_id)
 
     if zonas is not None and not zonas.empty:
