@@ -14,10 +14,7 @@ st.title("📍 Verificador de Clientes en Zonas Peligrosas")
 
 st.markdown("🔎 Coloca el **ID del cliente (1 a 1000)** o valida con **coordenadas nuevas**.")
 
-# Cargar clientes simulados
 clientes = gpd.read_file("clientes_1000_guayaquil.geojson")
-
-# Obtener token de secretos y form ID fijo
 kobo_token = os.getenv("KOBO_TOKEN")
 form_id = "aqY6oRXU7iELs6bmj3VuwB"
 
@@ -36,82 +33,85 @@ def get_zonas(token, form_id):
         st.error(f"Error al conectarse a KoBo: {response.status_code}")
         return None
 
-if kobo_token:
-    zonas = get_zonas(kobo_token, form_id)
+zonas = get_zonas(kobo_token, form_id) if kobo_token else None
 
-    if zonas is not None and not zonas.empty:
+# Inicializar session state
+if "mensaje" not in st.session_state:
+    st.session_state.mensaje = ""
+if "punto" not in st.session_state:
+    st.session_state.punto = None
+if "cliente" not in st.session_state:
+    st.session_state.cliente = None
 
-        with st.sidebar:
-            st.header("🧭 Búsqueda")
-            cliente_id = st.number_input("ID del cliente (1-1000)", min_value=1, max_value=1000, step=1)
-            st.markdown("---")
-            st.markdown("O coloca coordenadas:")
-            lat_input = st.text_input("Latitud")
-            lon_input = st.text_input("Longitud")
-            buscar_btn = st.button("🔍 Buscar ubicación")
+with st.sidebar:
+    st.header("🧭 Búsqueda")
+    cliente_id = st.number_input("ID del cliente (1-1000)", min_value=1, max_value=1000, step=1)
+    st.markdown("---")
+    st.markdown("O coloca coordenadas:")
+    lat_input = st.text_input("Latitud")
+    lon_input = st.text_input("Longitud")
+    buscar_btn = st.button("🔍 Buscar ubicación")
 
-        punto_focal = None
-        mensaje = ""
-        cliente_encontrado = None
-        riesgo = False
+if buscar_btn:
+    st.session_state.mensaje = ""
+    st.session_state.punto = None
+    st.session_state.cliente = None
 
-        if buscar_btn:
-            if lat_input and lon_input:
-                try:
-                    lat = float(lat_input)
-                    lon = float(lon_input)
-                    punto_focal = Point(lon, lat)
-                    riesgo = any(z.contains(punto_focal) for z in zonas.geometry)
-                    mensaje = (
-                        "🛑 Esta ubicación está en una zona peligrosa. Se recomienda no realizar visitas en campo."
-                        if riesgo else
-                        "✅ Ubicación segura. Se puede programar una visita."
-                    )
-                except:
-                    mensaje = "⚠️ Coordenadas inválidas"
-            else:
-                cliente_row = clientes[clientes["id_cliente"] == cliente_id]
-                if not cliente_row.empty:
-                    punto_focal = cliente_row.geometry.values[0]
-                    riesgo = any(z.contains(punto_focal) for z in zonas.geometry)
-                    cliente_encontrado = cliente_row.iloc[0]
-                    mensaje = (
-                        "🛑 El cliente está en una zona peligrosa. Se recomienda contactar por otros medios."
-                        if riesgo else
-                        "✅ Cliente en zona segura. Se puede visitar presencialmente."
-                    )
-                else:
-                    mensaje = "❌ Cliente no encontrado"
-
-        m = folium.Map(location=[-2.2, -79.9], zoom_start=12)
-        folium.TileLayer("CartoDB positron").add_to(m)
-
-        for _, zona in zonas.iterrows():
-            folium.GeoJson(zona.geometry, tooltip=zona.get("grupo_zona/nombre_zona", "Zona")).add_to(m)
-
-        if punto_focal:
-            folium.Marker(
-                location=[punto_focal.y, punto_focal.x],
-                icon=folium.Icon(color="blue", icon="info-sign"),
-                popup=mensaje
-            ).add_to(m)
-
-        st.subheader("🗺️ Mapa Interactivo")
-        st_data = st_folium(m, width=1000, height=600)
-
-        if mensaje:
-            if "✅" in mensaje:
-                st.success(mensaje)
-            elif "🛑" in mensaje:
-                st.error(mensaje)
-            else:
-                st.warning(mensaje)
-
-        if cliente_encontrado is not None:
-            st.markdown("### 🧾 Datos del Cliente")
-            st.json(cliente_encontrado.to_dict())
-
+    if lat_input and lon_input:
+        try:
+            lat = float(lat_input)
+            lon = float(lon_input)
+            punto = Point(lon, lat)
+            riesgo = any(z.contains(punto) for z in zonas.geometry) if zonas is not None else False
+            st.session_state.punto = punto
+            st.session_state.mensaje = (
+                "🛑 Esta ubicación está en una zona peligrosa. Se recomienda no realizar visitas en campo."
+                if riesgo else
+                "✅ Ubicación segura. Se puede programar una visita."
+            )
+        except:
+            st.session_state.mensaje = "⚠️ Coordenadas inválidas"
     else:
-        st.warning("No se encontraron zonas peligrosas desde KoBo.")
-else:
-    st.info("Falta el token KOBO_TOKEN en tus Secrets de Streamlit.")
+        cliente_row = clientes[clientes["id_cliente"] == cliente_id]
+        if not cliente_row.empty:
+            punto = cliente_row.geometry.values[0]
+            riesgo = any(z.contains(punto) for z in zonas.geometry) if zonas is not None else False
+            st.session_state.punto = punto
+            st.session_state.cliente = cliente_row.iloc[0]
+            st.session_state.mensaje = (
+                "🛑 El cliente está en una zona peligrosa. Se recomienda contactar por otros medios."
+                if riesgo else
+                "✅ Cliente en zona segura. Se puede visitar presencialmente."
+            )
+        else:
+            st.session_state.mensaje = "❌ Cliente no encontrado"
+
+# Mapa
+m = folium.Map(location=[-2.2, -79.9], zoom_start=12)
+folium.TileLayer("CartoDB positron").add_to(m)
+
+if zonas is not None:
+    for _, zona in zonas.iterrows():
+        folium.GeoJson(zona.geometry, tooltip=zona.get("grupo_zona/nombre_zona", "Zona")).add_to(m)
+
+if st.session_state.punto:
+    folium.Marker(
+        location=[st.session_state.punto.y, st.session_state.punto.x],
+        icon=folium.Icon(color="blue", icon="info-sign"),
+        popup=st.session_state.mensaje
+    ).add_to(m)
+
+st.subheader("🗺️ Mapa Interactivo")
+st_folium(m, width=1000, height=600)
+
+if st.session_state.mensaje:
+    if "✅" in st.session_state.mensaje:
+        st.success(st.session_state.mensaje)
+    elif "🛑" in st.session_state.mensaje:
+        st.error(st.session_state.mensaje)
+    else:
+        st.warning(st.session_state.mensaje)
+
+if st.session_state.cliente is not None:
+    st.markdown("### 🧾 Datos del Cliente")
+    st.json(st.session_state.cliente.to_dict())
