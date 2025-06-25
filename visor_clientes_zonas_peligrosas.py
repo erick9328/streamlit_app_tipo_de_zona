@@ -6,6 +6,7 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape, Point
+import os
 
 st.set_page_config(layout="wide")
 st.title("🛰️ Visor de Clientes en Zonas Peligrosas con Recomendación")
@@ -13,10 +14,12 @@ st.title("🛰️ Visor de Clientes en Zonas Peligrosas con Recomendación")
 # Cargar clientes desde archivo GeoJSON local
 clientes = gpd.read_file("clientes_fibra_guayaquil.geojson")
 
-# Formulario lateral
-st.sidebar.header("🔐 Conexión a KoBoToolbox")
-kobo_token = st.sidebar.text_input("Token de KoBo (privado)", type="password")
-form_id = st.sidebar.text_input("ID del formulario", value="aqY6oRXU7iELs6bmj3VuwB")
+# Token seguro desde secrets
+kobo_token = os.getenv("KOBO_TOKEN")
+
+# ID del formulario (puede seguir siendo editable si lo necesitas)
+st.sidebar.header("🧾 Configuración del Formulario")
+form_id = st.sidebar.text_input("ID del formulario KoBo", value="aqY6oRXU7iELs6bmj3VuwB")
 
 @st.cache_data(ttl=60)
 def get_geojson_from_kobo(token, form_id):
@@ -34,12 +37,10 @@ if kobo_token and form_id:
     zonas = get_geojson_from_kobo(kobo_token, form_id)
 
     if zonas is not None and not zonas.empty:
-        # Cruce espacial
         clientes["en_zona_peligrosa"] = clientes.geometry.apply(
             lambda punto: any(polygon.contains(punto) for polygon in zonas.geometry)
         )
 
-        # Búsqueda por ID
         st.sidebar.header("🔎 Búsqueda Manual")
         cliente_id = st.sidebar.number_input("Buscar por ID de cliente", min_value=1, max_value=2000, step=1)
         buscar_coords = st.sidebar.checkbox("Buscar por coordenadas")
@@ -68,7 +69,6 @@ if kobo_token and form_id:
                 else:
                     mensaje = "❌ Cliente no encontrado"
 
-        # Crear mapa
         m = folium.Map(location=[-2.2, -79.9], zoom_start=12)
         folium.TileLayer("CartoDB positron").add_to(m)
 
@@ -105,4 +105,4 @@ if kobo_token and form_id:
     else:
         st.warning("No se encontraron zonas peligrosas.")
 else:
-    st.info("Ingresa tu token de KoBo y el ID del formulario para comenzar.")
+    st.info("El token de KoBo no está configurado como secreto. Agrégalo como KOBO_TOKEN en Streamlit Cloud.")
