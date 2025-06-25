@@ -41,7 +41,6 @@ if kobo_token:
 
     if zonas is not None and not zonas.empty:
 
-        # Sidebar para ingreso
         with st.sidebar:
             st.header("🧭 Búsqueda")
             cliente_id = st.number_input("ID del cliente (1-1000)", min_value=1, max_value=1000, step=1)
@@ -49,35 +48,41 @@ if kobo_token:
             st.markdown("O coloca coordenadas:")
             lat_input = st.text_input("Latitud")
             lon_input = st.text_input("Longitud")
-            buscar_btn = st.button("🔍 Buscar")
+            buscar_btn = st.button("🔍 Buscar ubicación")
 
         punto_focal = None
         mensaje = ""
         cliente_encontrado = None
+        riesgo = False
 
         if buscar_btn:
-            # Buscar por coordenadas si están completas
             if lat_input and lon_input:
                 try:
                     lat = float(lat_input)
                     lon = float(lon_input)
                     punto_focal = Point(lon, lat)
                     riesgo = any(z.contains(punto_focal) for z in zonas.geometry)
-                    mensaje = "🛑 Zona peligrosa - evitar visita" if riesgo else "✅ Zona segura - se puede visitar"
+                    mensaje = (
+                        "🛑 Esta ubicación está en una zona peligrosa. Se recomienda no realizar visitas en campo."
+                        if riesgo else
+                        "✅ Ubicación segura. Se puede programar una visita."
+                    )
                 except:
                     mensaje = "⚠️ Coordenadas inválidas"
             else:
-                # Buscar por cliente
                 cliente_row = clientes[clientes["id_cliente"] == cliente_id]
                 if not cliente_row.empty:
                     punto_focal = cliente_row.geometry.values[0]
                     riesgo = any(z.contains(punto_focal) for z in zonas.geometry)
                     cliente_encontrado = cliente_row.iloc[0]
-                    mensaje = "🛑 Zona peligrosa - evitar visita" if riesgo else "✅ Zona segura - se puede visitar"
+                    mensaje = (
+                        "🛑 El cliente está en una zona peligrosa. Se recomienda contactar por otros medios."
+                        if riesgo else
+                        "✅ Cliente en zona segura. Se puede visitar presencialmente."
+                    )
                 else:
                     mensaje = "❌ Cliente no encontrado"
 
-        # Mapa
         m = folium.Map(location=[-2.2, -79.9], zoom_start=12)
         folium.TileLayer("CartoDB positron").add_to(m)
 
@@ -95,7 +100,12 @@ if kobo_token:
         st_data = st_folium(m, width=1000, height=600)
 
         if mensaje:
-            st.success(mensaje) if "✅" in mensaje else st.warning(mensaje)
+            if "✅" in mensaje:
+                st.success(mensaje)
+            elif "🛑" in mensaje:
+                st.error(mensaje)
+            else:
+                st.warning(mensaje)
 
         if cliente_encontrado is not None:
             st.markdown("### 🧾 Datos del Cliente")
